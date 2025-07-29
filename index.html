@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <title>Betala och aktivera Playsat TV</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #10121a; color: #fff; margin: 0; }
+    .container { max-width: 420px; margin: 40px auto; padding: 28px 20px; background: #181c28; border-radius: 16px; box-shadow: 0 4px 32px #0006; }
+    h1 { text-align: center; color: #1e90ff; }
+    .status { margin: 16px 0; padding: 14px; border-radius: 8px; }
+    .ok { background: #153; color: #cfc; }
+    .warn { background: #443; color: #ffc; }
+    .fail { background: #511; color: #fcc; }
+    label { font-weight: bold; display: block; margin-bottom: 6px; }
+    input[type="text"] { width: 100%; padding: 10px; border-radius: 6px; border: none; margin-bottom: 14px; font-size: 1rem; }
+    button { background: #ff4081; color: #fff; border: none; padding: 13px 24px; border-radius: 8px; font-size: 1.1rem; cursor: pointer; }
+    button[disabled] { background: #777; cursor: not-allowed; }
+    .kofi-box { margin-top: 22px; }
+    iframe { width: 100%; border: none; border-radius: 10px; background: #fff; }
+    .mac-info { text-align: center; margin: 10px 0 0 0; color: #999; font-size: 0.95rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Aktivera Playsat TV</h1>
+    <form id="macForm" autocomplete="off">
+      <label for="macInput">MAC-adress från din app</label>
+      <input type="text" id="macInput" name="mac" placeholder="00:00:90:41:CE:6D" maxlength="17" required>
+      <button type="submit" id="checkBtn">Kontrollera status</button>
+      <div class="mac-info" id="macInfo"></div>
+    </form>
+    <div id="statusBox"></div>
+    <div class="kofi-box" id="kofiBox" style="display:none;"></div>
+  </div>
+  <script>
+    // -- ES5 only! --
+    function getMacFromURL() {
+      var m = window.location.search.match(/mac=([0-9a-fA-F:-]+)/);
+      return m ? m[1] : "";
+    }
+    function normalizeMac(mac) {
+      mac = mac.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+      var arr = [];
+      for (var i = 0; i < 12; i += 2) arr.push(mac.substr(i,2));
+      return arr.join(':');
+    }
+    var macInput = document.getElementById('macInput');
+    var macForm = document.getElementById('macForm');
+    var statusBox = document.getElementById('statusBox');
+    var kofiBox = document.getElementById('kofiBox');
+    var macInfo = document.getElementById('macInfo');
+
+    // -- Förifyll MAC från URL om finns --
+    var macURL = getMacFromURL();
+    if (macURL) {
+      macInput.value = normalizeMac(macURL);
+      macInfo.textContent = "MAC-adressen hämtad från din app.";
+    }
+
+    macForm.onsubmit = function(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      statusBox.innerHTML = "";
+      kofiBox.style.display = "none";
+      var mac = normalizeMac(macInput.value);
+      if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac)) {
+        statusBox.innerHTML = "<div class='status fail'>MAC-adressen är ogiltig. Kontrollera och försök igen.</div>";
+        return;
+      }
+      macInput.value = mac;
+      macInfo.textContent = "MAC-adress: " + mac;
+      statusBox.innerHTML = "<div class='status warn'>Hämtar status...</div>";
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', 'https://proxy.playsattv.com/check/' + encodeURIComponent(mac), true);
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4) {
+          var data = {};
+          try { data = JSON.parse(xhr.responseText); } catch(e){}
+          kofiBox.style.display = "none";
+          if (data && typeof data.status !== "undefined") {
+            // MAC finns i basen
+            if (data.status === "active") {
+              statusBox.innerHTML = "<div class='status ok'>Denna MAC-adress är <b>aktiverad</b>.<br>" +
+                "Antal dagar kvar till förnyelse: <b>" + data.days_left + "</b></div>";
+            } else if (data.status === "test" || data.status === "expired") {
+              // Visa betalning endast om test eller utgången period
+              var msg = (data.status === "test")
+                ? "<div class='status warn'>MAC-adressen är i testläge.<br>Du kan nu uppgradera till fullversion:</div>"
+                : "<div class='status fail'>MAC-adressens testperiod har gått ut.<br>Du måste betala för att fortsätta:</div>";
+              statusBox.innerHTML = msg;
+              showKofi(mac);
+            } else {
+              statusBox.innerHTML = "<div class='status fail'>Licensstatus för denna MAC är okänd. Kontakta support.</div>";
+            }
+          } else {
+            // MAC matchar inte någon i server-basen
+            statusBox.innerHTML = "<div class='status fail'>MAC-adressen är ogiltig eller okänd. Kontrollera stavningen.</div>";
+          }
+        }
+      };
+      xhr.onerror = function() {
+        statusBox.innerHTML = "<div class='status fail'>Tekniskt fel, försök igen.</div>";
+        kofiBox.style.display = "none";
+      };
+      xhr.send();
+    };
+
+    function showKofi(mac) {
+      kofiBox.innerHTML =
+        "<iframe id='kofiframe' src='https://ko-fi.com/playsattv/?hidefeed=true&widget=true&embed=true&preview=true' " +
+        "height='712' title='playsattv' allowpaymentrequest></iframe>" +
+        "<div style='margin:12px 0 0 0;color:#fff;font-size:0.98rem;'>" +
+        "Vid betalning – ange din MAC-adress: <b style='color:#1e90ff'>" + mac + "</b> i meddelandefältet.<br>" +
+        "<span style='color:#ffaa44'>Du <b>måste</b> ange MAC-adress för att få licensen aktiverad.</span>" +
+        "</div>";
+      kofiBox.style.display = "block";
+    }
+  </script>
+</body>
+</html>
+
+
+
